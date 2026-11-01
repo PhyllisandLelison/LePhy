@@ -1715,6 +1715,8 @@ function loadSettingsToUI(){
   $('maxReplyCountVal').textContent=settings.maxReplyCount||3;
   $('wallpaperOpacity').value=settings.wallpaperOpacity*100;
   $('wallpaperOpacityVal').textContent=Math.round(settings.wallpaperOpacity*100)+'%';
+  // 修复：加载时立即把已保存的壁纸渲染出来，防止刷新后恢复默认
+  applyCustomization();
   $('readNoReplyToggle').checked=settings.readNoReply;
   $('readNoReplyChance').value=settings.readNoReplyChance;
   $('readNoReplyChanceVal').textContent=settings.readNoReplyChance+'%';
@@ -3061,23 +3063,34 @@ function bindEvents(){
   $('darkModeToggle').addEventListener('change',e=>{settings.theme=e.target.checked?'dark':'light';applyTheme();saveAll()});
   $('bubbleRadius').addEventListener('input',e=>{settings.bubbleRadius=parseInt(e.target.value,10);$('bubbleRadiusVal').textContent=settings.bubbleRadius+'px';applyCustomization();saveAll()});
   $('fontSize').addEventListener('change',e=>{settings.fontSize=parseInt(e.target.value,10);applyCustomization();saveAll()});
+  // 修复：图片通过 FileReader 原样读取为 base64，不做任何 Canvas 重绘，避免变黑
+  // 每次上传后立即清空 input.value，保证重复上传同一文件也能触发 change
+  // 写入 state 后立即 saveAll + render，保证刷新后持久化
   function readImageFile(f,cb){if(!f)return;const reader=new FileReader();reader.onload=ev=>cb(ev.target.result);reader.readAsDataURL(f)}
   function onImageRead(key,extra){
     return src=>{
+      // 直接写入 settings 并立即保存，避免引用层级错误导致写入失效
       settings[key]=src;
       saveAll();
+      // 上传后强制重新渲染对应元素
+      if(key==='userAvatar'){
+        var ua=document.getElementById('userAvatarImg');
+        if(ua)ua.src=src;
+      }else if(key==='charAvatar'){
+        document.querySelectorAll('.avatar.character,.char-avatar').forEach(function(el){el.src=src});
+      }
       if(extra)extra();
       toast(key==='wallpaper'?'壁纸已更新':(key==='userAvatar'?'头像已更新':'角色头像已更新'));
     };
   }
   $('wallpaperOpacity').addEventListener('input',e=>{settings.wallpaperOpacity=parseInt(e.target.value,10)/100;$('wallpaperOpacityVal').textContent=Math.round(settings.wallpaperOpacity*100)+'%';applyCustomization();saveAll()});
   $('clearWallpaper').addEventListener('click',()=>{settings.wallpaper=null;applyCustomization();saveAll();toast('已清除壁纸')});
-  const hw=e=>{const f=e.target.files&&e.target.files[0];if(!f)return;readImageFile(f,onImageRead('wallpaper',()=>applyCustomization()))};
+  const hw=e=>{const f=e.target.files&&e.target.files[0];const inp=e.target;if(!f)return;readImageFile(f,src=>{onImageRead('wallpaper',()=>applyCustomization())(src);if(inp)inp.value=''});};
   $('wallpaperInput').addEventListener('change',hw);
   $('wallpaperInput2').addEventListener('change',hw);
   $('presetGrid').addEventListener('click',e=>{const item=e.target.closest('.preset-item');if(!item)return;const preset=PRESET_COLORS[parseInt(item.dataset.index,10)];settings.userBubbleColor=preset.user;settings.charBubbleColor=preset.char;applyBubbleColors();document.querySelectorAll('.preset-item').forEach(p=>p.classList.remove('active'));item.classList.add('active');saveAll();toast('已应用「'+preset.name+'」')});
-  $('myAvatarInput').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(!f)return;readImageFile(f,onImageRead('userAvatar',()=>renderChatFull()))});
-  $('charAvatarInput').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(!f)return;readImageFile(f,onImageRead('charAvatar',()=>{renderChatFull();renderMoments()}))});
+  $('myAvatarInput').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];const inp=e.target;if(!f)return;readImageFile(f,src=>{onImageRead('userAvatar',()=>renderChatFull())(src);if(inp)inp.value=''});});
+  $('charAvatarInput').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];const inp=e.target;if(!f)return;readImageFile(f,src=>{onImageRead('charAvatar',()=>{renderChatFull();renderMoments()})(src);if(inp)inp.value=''});});
   document.querySelectorAll('.nav-item').forEach(btn=>{btn.addEventListener('click',()=>{const vn=btn.dataset.view;document.querySelectorAll('.view').forEach(v=>v.classList.remove('active-view'));const t=$(vn+'View');if(t)t.classList.add('active-view');document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));btn.classList.add('active');if(vn==='library'){if(batchDeleteMode){batchDeleteMode=false;batchSelected.clear();const b=document.getElementById('batchDeleteBtn');if(b){b.style.background='';b.style.color=''}}renderCardLibrary();renderGroupFilter();renderCardStatistics()}if(vn==='letter')renderLetterList();if(vn==='presence'){renderMoments();renderDiaryList();renderMemoryAlbum();updatePresenceScene();updateWeatherPanel()}if(vn==='settings'){loadSettingsToUI();renderPresetColors();renderPoolEditor(currentPoolKey);renderStickerManager();renderBubbleSchemes();renderBeautifySchemes()}})});
 
   $('cancelLetterWrite').addEventListener('click',()=>$('letterWriteModal').classList.remove('show'));
